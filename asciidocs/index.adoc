@@ -1,4 +1,4 @@
-= My Project
+= Authentication Docs
 firstname lastname
 1.0.0, yyyy-mm-dd: Some notes
 ifndef::imagesdir[:imagesdir: images]
@@ -14,8 +14,99 @@ ifdef::backend-html5[]
 // print the toc here (not at the default position)
 //toc::[]
 
-== Header 1
+Codeausschnitte aus diesem[Codeausschnitte aus diesem https://github.com/htl-leonding-project/franklyn2[Repo]
+
+Login erfolgt über die Methode `src/server/franklyn/docker/server/app/services/webUntisService.js`
+
+[source, javascript]
+----
+    login(username, password) {
+        return new Promise(async (resolve) => {
+            this.username = username;
+            this.password = password;
+            var config = await this.getConfig();
+            this.school = config.school; <1>
+            this.server = config.server;
+            this.id = this.school + '/' + this.username
+            this.url = 'https://' + this.server + '/WebUntis/jsonrpc.do';
+            this.base64 = "_" + btoa(this.school);
+            var response = await axios({
+                method: "POST",
+                url: this.url + "?school=" + encodeURIComponent(this.school),
+                headers: {
+                    "Cookie": this.buildCookies(),
+                    "Accept": "application/json",
+                    "Connection": "keep-alive"
+                },
+                data: {
+                    id: this.id,
+                    method: "authenticate",
+                    params: {
+                        "user": this.username,
+                        "password": this.password,
+                        "client": this.id
+                    },
+                    jsonrpc: "2.0"
+                }
+            });<2>
+            if (response.data.result) {<3>
+                this.client = response.data.result;
+                resolve(true);
+            } else {
+                resolve(false);
+            }
+        });
+    }
 
 
-=== Header 2
+async logout() { <4>
+    return await this.postToUntis({}, 'logout');
+}
+
+buildCookies() {
+    let cookies = [];
+    cookies.push(CookieBuilder.serialize('schoolname', this.base64));
+    if (this.client != null) {
+        cookies.push(CookieBuilder.serialize('JSESSIONID', this.client.sessionId));
+    }
+    return cookies.join('; ');
+}
+
+postToUntis(params, method) {
+    return new Promise(async (resolve) => {
+        var response = await axios({
+            method: "POST",
+            url: this.url,
+            headers: {
+                "Cookie": this.buildCookies(),
+                "Accept": "application/json",
+                "Connection": "keep-alive"
+            },
+            data: {
+                id: this.client.sessionId,
+                method: method,
+                params: params,
+                jsonrpc: "2.0"
+            }
+        });
+        resolve(response);
+    })
+}
+----
+1. Daten werden aus _src/server/franklyn/docker/server/app/config/default_config.json_ gelesen
+* Die Schule ist dabei `htbla linz leonding`
+* Der Server ist dabei `mese.webuntis.com`
+* Die URL ist `https://mese.webuntis.com/WebUntis/jsonrpc.do`
+2. Es wird ein POST-Request gesendet mit folgenden Daten:
+* *URL:* `https://mese.webuntis.com/WebUntis/jsonrpc.do?school=htbla%20linz%20leonding`
+* Im Header stehen folgende Daten:
+** Ein Cookie welcher mit dem Schulnamen mithilfe von Base64 kodiert wurde.
+** Im Body befindet sich der mitgegebene username, das mitgegebene Passwort und ein Client mit dem Wert `htbla linz leonding/` und dem usernamen (z.B. `htbla linz leonding/lehrer`.
+3. Es wird ein Client gesetzt, mit welchem dann alle zukünftigen Cookies erzeugt werden.
+4. Für den Logout wird ein POST-Request gesendet.
+* Im Header:
+** Es wird wieder ein Cookie wie beim Login erzeugt.
+* Im Body
+** Die SessionID des Clients
+** Als Methode wird `logout` mitgegeben
 
